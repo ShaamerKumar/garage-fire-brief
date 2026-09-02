@@ -56,9 +56,14 @@ export type Brief = {
 };
 
 /**
- * Normalize for quote matching. Source text arrives as markdown with inconsistent
- * whitespace, and models routinely straighten curly quotes and dashes when copying
- * a quote out, so an exact === comparison rejects quotes that are genuinely present.
+ * Normalize for quote matching.
+ *
+ * Sources arrive as markdown. A model asked to copy a span verbatim reliably
+ * quotes what the page *reads* as, not its markup: given "Thomas Jugan\n\n######
+ * Fire Chief" it returns "Thomas Jugan\n\nFire Chief". Comparing raw strings
+ * therefore rejects facts that are genuinely on the page — and because a rejected
+ * fact just vanishes, that failure is invisible. So strip markup and punctuation
+ * variants from both sides before comparing.
  */
 export function normalize(s: string): string {
   return s
@@ -66,6 +71,10 @@ export function normalize(s: string): string {
     .replace(/[‘’‛]/g, "'")
     .replace(/[“”]/g, '"')
     .replace(/[‐-―]/g, '-')
+    // Markdown the model drops when quoting: headings, emphasis, code, quotes,
+    // table pipes, list bullets, and link/image brackets.
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/[#*_`>|]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }

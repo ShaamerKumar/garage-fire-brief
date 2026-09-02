@@ -48,7 +48,7 @@ export async function search(
     },
     body: JSON.stringify({
       query,
-      max_results: opts.maxResults ?? 5,
+      max_results: opts.maxResults ?? 8,
       search_depth: 'advanced',
       // Must be boolean. The documented "markdown" string silently returns null.
       include_raw_content: true,
@@ -77,12 +77,26 @@ export async function search(
   });
 }
 
-/** Merge result sets from parallel queries, keeping the longest text per URL. */
+/**
+ * Merge result sets from parallel queries, round-robin.
+ *
+ * Concatenating and truncating lets one broad query fill every slot: a generic
+ * "fire grants" search returns six FEMA program pages and crowds out the narrow
+ * query that found the actual bid notice. Interleaving guarantees each query
+ * contributes its best result before any query contributes its second.
+ */
 export function dedupe(groups: Source[][]): Source[] {
-  const byUrl = new Map<string, Source>();
-  for (const s of groups.flat()) {
-    const existing = byUrl.get(s.url);
-    if (!existing || s.text.length > existing.text.length) byUrl.set(s.url, s);
+  const seen = new Set<string>();
+  const out: Source[] = [];
+  const depth = Math.max(0, ...groups.map((g) => g.length));
+
+  for (let rank = 0; rank < depth; rank++) {
+    for (const group of groups) {
+      const s = group[rank];
+      if (!s || seen.has(s.url)) continue;
+      seen.add(s.url);
+      out.push(s);
+    }
   }
-  return [...byUrl.values()];
+  return out;
 }

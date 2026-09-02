@@ -20,24 +20,34 @@ const MODEL = 'anthropic/claude-sonnet-4.5';
 function queriesFor(dept: Department): Record<Section, { q: string; opts: SearchOptions }[]> {
   const where = `${dept.city} ${dept.state}`;
   const site = dept.website ? new URL(dept.website).hostname.replace(/^www\./, '') : null;
+  // Small departments often have no site of their own; their roster, budget and
+  // bid notices live on the town's site instead. Skipping that was leaving the
+  // best material undiscovered for exactly the hardest cases.
+  const townQuery = { q: `${where} town fire department chief apparatus budget`, opts: {} };
 
   return {
     leadership: [
       { q: `"${dept.name}" ${where} fire chief officers leadership`, opts: {} },
-      ...(site ? [{ q: `${dept.name} chief staff`, opts: { includeDomains: [site] } }] : []),
+      ...(site
+        ? [{ q: `${dept.name} chief staff`, opts: { includeDomains: [site] } }]
+        : [townQuery]),
     ],
     fleet: [
       {
         q: `"${dept.name}" ${where} apparatus engine ladder truck rescue fleet`,
         opts: {},
       },
-      ...(site ? [{ q: `${dept.name} apparatus fleet`, opts: { includeDomains: [site] } }] : []),
+      ...(site
+        ? [{ q: `${dept.name} apparatus fleet`, opts: { includeDomains: [site] } }]
+        : [{ q: `"${dept.name}" ${where} roster apparatus units`, opts: {} }]),
     ],
     funding: [
-      { q: `"${dept.name}" grant award funding ${where}`, opts: {} },
+      { q: `"${dept.name}" ${where} grant awarded funding received`, opts: {} },
+      // Procurement notices are the strongest buying signal there is: a department
+      // taking bids on a new apparatus is a department about to have a surplus one.
       {
-        q: `${dept.name} ${dept.city} AFG SAFER assistance to firefighters grant`,
-        opts: { includeDomains: ['fema.gov', 'firegrantsupport.com'] },
+        q: `${where} fire department request for bids RFP apparatus tanker engine surplus`,
+        opts: {},
       },
       {
         q: `"${dept.name}" ${where} apparatus purchase approved funds new engine cost`,
@@ -57,7 +67,7 @@ const GUIDANCE: Record<Section, string> = {
   fleet:
     'What apparatus this department currently operates: engines, ladders/trucks, rescues, tankers, ambulances, brush units. Include model years, manufacturers, and unit numbers when stated. Note anything described as aging, out of service, or being replaced.',
   funding:
-    'Money: AFG/SAFER or other grant awards, budget allocations, bond or referendum activity, approved apparatus purchases, fundraising for new vehicles. Amounts and dates matter.',
+    'Money moving in either direction. IN: AFG/SAFER or other grant awards, budget allocations, bond or referendum activity, approved apparatus purchases, fundraising. OUT — and this is the highest-value signal of all: any sign the department is disposing of apparatus. Sealed bids or requests for bids on a surplus vehicle, an auction listing, a unit listed for sale, an apparatus marked retired or out of service. A department already selling a truck is a department that needs this AE today. Amounts, unit details, and deadlines matter.',
   news:
     'Recent, specific, dated activity at this department. Two kinds both count: sales signals (apparatus delivered or ordered, station project, incident that stressed the fleet) and conversation openers (community events, traditions, milestones, long-serving members). An AE who can open with something the department is proud of gets a better call.',
 };
@@ -91,7 +101,7 @@ TARGET DEPARTMENT (the only one that counts):
 Extract facts for the section "${section}": ${GUIDANCE[section]}
 
 RULES — these are strict:
-1. Only facts about the target department above. Departments in other towns or states with similar names are NOT the target. If a source is about a different department, ignore it entirely.
+1. LOCATION decides identity, not the exact name string. The same department is written many ways: "Volunteer" added or dropped, "Fire Co" / "Fire Company" / "Fire Department" / "FD", or just the town's name. Treat a source as the target when it describes a fire department in ${dept.city}, ${dept.state} — matching the street address above is conclusive. Conversely, a department with a nearly identical name in a DIFFERENT town or state is NOT the target; ignore it entirely. Fire department names repeat across the country, so check the place, every time.
 2. Every fact needs a "quote": a span of text copied EXACTLY, character for character, from the source. Do not paraphrase, reword, fix typos, or join text from different parts of the page. If you cannot copy an exact span, omit the fact.
 3. "sourceUrl" must be the url attribute of the source the quote came from.
 4. "claim" is your own one-sentence statement of the fact, written for a salesperson to read aloud. Be specific: names, numbers, dates.
@@ -159,7 +169,7 @@ export async function researchSection(
   const groups = await Promise.all(
     queriesFor(dept)[section].map((({ q, opts }) => search(q, opts).catch(() => []))),
   );
-  const sources = dedupe(groups).slice(0, 6);
+  const sources = dedupe(groups).slice(0, 9);
 
   onProgress?.({ section, status: 'reading' });
   const facts = await extract(dept, section, sources).catch(() => []);
