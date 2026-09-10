@@ -34,6 +34,10 @@ function queriesFor(dept: Department): Record<Section, { q: string; opts: Search
       ...(site
         ? [{ q: `${dept.name} chief staff`, opts: { includeDomains: [site] } }]
         : [townQuery]),
+      {
+        q: `"${dept.name}" ${where} new fire chief appointed sworn in officers elected`,
+        opts: { timeRange: 'year' },
+      },
     ],
     fleet: [
       {
@@ -43,6 +47,10 @@ function queriesFor(dept: Department): Record<Section, { q: string; opts: Search
       ...(site
         ? [{ q: `${dept.name} apparatus fleet`, opts: { includeDomains: [site] } }]
         : [{ q: `"${dept.name}" ${where} roster apparatus units`, opts: {} }]),
+      {
+        q: `"${dept.name}" ${where} apparatus retired out of service replaced sold new truck delivered placed in service`,
+        opts: { timeRange: 'year' },
+      },
     ],
     funding: [
       { q: `"${dept.name}" ${where} grant awarded funding received`, opts: {} },
@@ -53,13 +61,17 @@ function queriesFor(dept: Department): Record<Section, { q: string; opts: Search
         opts: {},
       },
       {
-        q: `"${dept.name}" ${where} apparatus purchase approved funds new engine cost`,
-        opts: { timeRange: 'year' },
+        q: `${where} fire department surplus apparatus for sale GovDeals Municibid auction used fire truck`,
+        opts: {},
       },
     ],
     news: [
       { q: `"${dept.name}" ${where} news`, opts: { timeRange: 'month' } },
       { q: `${dept.city} ${dept.state} fire department new engine truck delivered`, opts: { timeRange: 'year' } },
+      {
+        q: `"${dept.name}" ${where} open house anniversary fundraiser banquet station renovation merger consolidation`,
+        opts: { timeRange: 'year' },
+      },
     ],
   };
 }
