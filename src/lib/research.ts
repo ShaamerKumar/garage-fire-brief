@@ -1,31 +1,30 @@
 import {
   SECTIONS,
+  hostOf,
   quoteAppearsIn,
   type Department,
   type Fact,
   type Section,
   type Source,
 } from './schema';
-import { dedupe, search, type SearchOptions } from './tavily';
+import { interleave, search, type SearchOptions } from './tavily';
 
 const GATEWAY = 'https://ai-gateway.vercel.sh/v1/chat/completions';
 const MODEL = 'anthropic/claude-sonnet-4.5';
 
-/**
- * Queries are geo-pinned on purpose. Fire department names repeat heavily across
- * states ("Washington Fire Department" exists in many), and a result about the
- * wrong one looks identical to a correct result: real URL, plausible content,
- * citation that validates. City and state in every query is the cheapest defense.
- */
-function queriesFor(dept: Department): Record<Section, { q: string; opts: SearchOptions }[]> {
+function gatewayHeaders(): Record<string, string> {
+  const key = process.env.AI_GATEWAY_API_KEY;
+  if (!key) throw new Error('AI_GATEWAY_API_KEY is not set');
+  return { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` };
+}
+
+type Query = { q: string; opts: SearchOptions };
+
+/** Geo-pinned on purpose: a same-named department in another state looks identical to a correct result. */
+function queriesFor(dept: Department): Record<Section, Query[]> {
   const where = `${dept.city} ${dept.state}`;
-  const site =
-    dept.website && URL.canParse(dept.website)
-      ? new URL(dept.website).hostname.replace(/^www\./, '')
-      : null;
-  // Small departments often have no site of their own; their roster, budget and
-  // bid notices live on the town's site instead. Skipping that was leaving the
-  // best material undiscovered for exactly the hardest cases.
+  const site = dept.website ? hostOf(dept.website) : null;
+  // Departments with no site of their own keep their roster and bid notices on the town's site.
   const townQuery = { q: `${where} town fire department chief apparatus budget`, opts: {} };
 
   return {
@@ -54,8 +53,6 @@ function queriesFor(dept: Department): Record<Section, { q: string; opts: Search
     ],
     funding: [
       { q: `"${dept.name}" ${where} grant awarded funding received`, opts: {} },
-      // Procurement notices are the strongest buying signal there is: a department
-      // taking bids on a new apparatus is a department about to have a surplus one.
       {
         q: `${where} fire department request for bids RFP apparatus tanker engine surplus`,
         opts: {},
@@ -89,12 +86,30 @@ const GUIDANCE: Record<Section, string> = {
 
 type RawFact = { claim: string; quote: string; sourceUrl: string };
 
-/**
- * Ask the model to extract facts, then keep only those whose verbatim quote is
- * actually present in the source we fetched. The model is capable of producing a
- * plausible claim attached to a real URL that does not support it; verifying the
- * quote is what turns "cited" into "sourced".
- */
+/** The model can attach a plausible claim to a real URL that does not support it, so the quote decides. */
+function verifiedFacts(raw: RawFact[], sources: Source[]): Fact[] {
+  const byUrl = new Map(sources.map((s) => [s.url, s]));
+
+  return raw.flatMap((f) => {
+    const source = byUrl.get(f.sourceUrl);
+    if (!source) return [];
+    if (!quoteAppearsIn(f.quote, source.text)) return [];
+    return [{ claim: f.claim, quote: f.quote, sourceUrl: source.url, sourceTitle: source.title }];
+  });
+}
+
+const CLAIM_DEDUPE_PREFIX = 60;
+
+function dedupeByClaim(facts: Fact[]): Fact[] {
+  const seen = new Set<string>();
+  return facts.filter((f) => {
+    const key = f.claim.toLowerCase().slice(0, CLAIM_DEDUPE_PREFIX);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 async function extract(
   dept: Department,
   section: Section,
@@ -131,10 +146,7 @@ ${corpus}`;
 
   const res = await fetch(GATEWAY, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${process.env.AI_GATEWAY_API_KEY}`,
-    },
+    headers: gatewayHeaders(),
     body: JSON.stringify({
       model: MODEL,
       messages: [{ role: 'user', content: prompt }],
@@ -153,24 +165,12 @@ ${corpus}`;
   let raw: RawFact[];
   try {
     raw = JSON.parse(json);
-  } catch {
+  } catch (err) {
+    console.error(`[research] extract: unparseable model JSON (${dept.name}, ${section})`, err);
     return [];
   }
 
-  const byUrl = new Map(sources.map((s) => [s.url, s]));
-  const seen = new Set<string>();
-
-  return raw.flatMap((f) => {
-    const source = byUrl.get(f.sourceUrl);
-    // Citation must point at a source we actually fetched...
-    if (!source) return [];
-    // ...and the quote must really be on that page.
-    if (!quoteAppearsIn(f.quote, source.text)) return [];
-    const key = f.claim.toLowerCase().slice(0, 60);
-    if (seen.has(key)) return [];
-    seen.add(key);
-    return [{ claim: f.claim, quote: f.quote, sourceUrl: source.url, sourceTitle: source.title }];
-  });
+  return dedupeByClaim(verifiedFacts(raw, sources));
 }
 
 export type Progress = { section: Section; status: 'searching' | 'reading' | 'done'; found?: number };
@@ -182,23 +182,26 @@ export async function researchSection(
 ): Promise<Fact[]> {
   onProgress?.({ section, status: 'searching' });
   const groups = await Promise.all(
-    queriesFor(dept)[section].map((({ q, opts }) => search(q, opts).catch(() => []))),
+    queriesFor(dept)[section].map(({ q, opts }) =>
+      search(q, opts).catch((err: unknown) => {
+        console.error(`[research] search failed (${dept.name}, ${section}, q=${q})`, err);
+        return [];
+      }),
+    ),
   );
-  const sources = dedupe(groups).slice(0, 9);
+  const sources = interleave(groups).slice(0, 9);
 
   onProgress?.({ section, status: 'reading' });
-  const facts = await extract(dept, section, sources).catch(() => []);
+  const facts = await extract(dept, section, sources).catch((err: unknown) => {
+    console.error(`[research] extract failed (${dept.name}, ${section})`, err);
+    return [];
+  });
 
   onProgress?.({ section, status: 'done', found: facts.length });
   return facts;
 }
 
-/**
- * Synthesizes the one line the AE actually wants: why call today. It is fed only
- * claims that already survived quote verification — never raw page text — so it
- * has no material from which to invent an unsourced claim. Any failure yields ''
- * rather than throwing: a missing summary must never cost the AE a working brief.
- */
+/** Fed only claims that already survived verification, never raw page text, and never throws: a missing headline must not cost the AE a working brief. */
 export async function summarize(
   dept: Department,
   sections: Record<Section, Fact[]>,
@@ -238,10 +241,7 @@ RULES — these are strict:
   try {
     const res = await fetch(GATEWAY, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${process.env.AI_GATEWAY_API_KEY}`,
-      },
+      headers: gatewayHeaders(),
       body: JSON.stringify({
         model: MODEL,
         messages: [{ role: 'user', content: prompt }],
@@ -251,12 +251,17 @@ RULES — these are strict:
       cache: 'no-store',
     });
 
-    if (!res.ok) return '';
+    if (!res.ok) {
+      const detail = (await res.text()).slice(0, 200);
+      console.error(`[research] summarize: AI Gateway ${res.status} (${dept.name}): ${detail}`);
+      return '';
+    }
 
     const body = (await res.json()) as { choices?: { message?: { content?: string } }[] };
     const text = body.choices?.[0]?.message?.content;
     return typeof text === 'string' ? text.trim() : '';
-  } catch {
+  } catch (err) {
+    console.error(`[research] summarize failed (${dept.name})`, err);
     return '';
   }
 }

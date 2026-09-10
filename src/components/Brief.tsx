@@ -1,32 +1,18 @@
-import { SECTIONS, SECTION_LABELS, type Brief, type Fact } from '@/lib/schema';
+import {
+  SECTIONS,
+  SECTION_LABELS,
+  hostOf,
+  stripMarkdown,
+  type Brief,
+  type Fact,
+} from '@/lib/schema';
 
-/**
- * Sources are extracted as markdown, so a table row arrives as
- * "Utility | 2021 Chevy Silverado 2500" — but on the page those are two cells,
- * and only each cell is separately findable. Splitting at every structural
- * boundary keeps each highlighted fragment something the reader can actually
- * search for on the source page.
- */
+/** A quote spanning a structural boundary is never contiguous on the rendered page, so only a fragment is findable there. */
 function quoteFragments(quote: string): string[] {
   return quote
     .split(/\n+|\s*\|\s*/)
-    .map((part) =>
-      part
-        .replace(/(^|\s)#{1,6}(?=\s|$)/g, ' ')
-        .replace(/(^|\s)>+(?=\s|$)/g, ' ')
-        .replace(/[*_`]/g, '')
-        .replace(/\s+/g, ' ')
-        .trim(),
-    )
+    .map((part) => stripMarkdown(part).replace(/\s+/g, ' ').trim())
     .filter((part, i, all) => part.length >= 3 && all.indexOf(part) === i);
-}
-
-function hostOf(url: string) {
-  try {
-    return new URL(url).hostname.replace(/^www\./, '');
-  } catch {
-    return url;
-  }
 }
 
 const LINK_FOCUS =
@@ -34,7 +20,7 @@ const LINK_FOCUS =
 
 function FactRow({ fact }: { fact: Fact }) {
   return (
-    <li className="-mx-2 rounded-md px-2 py-2 transition-colors hover:bg-neutral-100">
+    <li className="-mx-2 rounded-md px-2 py-2 transition-colors hover:bg-neutral-50">
       <p className="text-[15px] font-medium leading-relaxed text-neutral-900">{fact.claim}</p>
       <a
         href={fact.sourceUrl}
@@ -43,16 +29,13 @@ function FactRow({ fact }: { fact: Fact }) {
         title={fact.sourceTitle}
         className={`mt-1.5 inline-block max-w-full break-words text-xs font-medium text-neutral-500 underline-offset-2 hover:text-orange-700 hover:underline ${LINK_FOCUS}`}
       >
-        {hostOf(fact.sourceUrl)}
+        {hostOf(fact.sourceUrl) ?? fact.sourceUrl}
       </a>
       <p className="mt-1 text-xs leading-relaxed text-neutral-500">
-        <span aria-hidden="true" className="mr-1 text-neutral-300">
-          *
-        </span>
         {quoteFragments(fact.quote).map((fragment, i) => (
           <span key={i}>
             {i > 0 && <span className="mx-1 text-neutral-300">·</span>}
-            <mark className="rounded-sm bg-amber-100/60 px-1 italic text-neutral-500">
+            <mark className="rounded-sm bg-amber-100/60 px-1 italic text-neutral-600">
               {fragment}
             </mark>
           </span>
@@ -89,10 +72,10 @@ export default function BriefView({ brief }: { brief: Brief }) {
               rel="noopener noreferrer"
               className={`max-w-full break-words text-neutral-600 hover:text-orange-700 hover:underline ${LINK_FOCUS}`}
             >
-              {hostOf(d.website)}
+              {hostOf(d.website) ?? d.website}
             </a>
           )}
-          <span className="text-neutral-400">
+          <span className="text-neutral-600">
             {total} sourced {total === 1 ? 'fact' : 'facts'}
           </span>
         </div>
@@ -106,14 +89,13 @@ export default function BriefView({ brief }: { brief: Brief }) {
             </h2>
             <p className="inline-flex items-center gap-1 text-[11px] leading-tight text-neutral-500">
               <svg
-                role="img"
+                aria-hidden="true"
                 viewBox="0 0 16 16"
                 fill="none"
                 stroke="currentColor"
                 strokeWidth="1.4"
                 className="h-3.5 w-3.5 shrink-0 text-orange-700/70"
               >
-                <title>Disclosure</title>
                 <circle cx="8" cy="8" r="6.25" />
                 <path d="M8 7.4v3.6" strokeLinecap="round" />
                 <circle cx="8" cy="5.1" r="0.85" fill="currentColor" stroke="none" />
@@ -132,10 +114,10 @@ export default function BriefView({ brief }: { brief: Brief }) {
           const facts = brief.sections[section];
           return (
             <section key={section} className="py-5">
-              <h2 className="mb-3 flex items-baseline gap-2 text-xs font-semibold uppercase tracking-widest text-neutral-400">
+              <h2 className="mb-3 flex items-baseline gap-2 text-xs font-semibold uppercase tracking-widest text-neutral-500">
                 {SECTION_LABELS[section]}
                 {facts.length > 0 && (
-                  <span className="font-normal tracking-normal text-neutral-300">
+                  <span className="font-normal tracking-normal text-neutral-400">
                     {facts.length}
                   </span>
                 )}
@@ -147,7 +129,7 @@ export default function BriefView({ brief }: { brief: Brief }) {
                   ))}
                 </ul>
               ) : (
-                <p className="text-sm text-neutral-400">
+                <p className="text-sm text-neutral-600">
                   Nothing verifiable found. Worth asking on the call.
                 </p>
               )}
@@ -156,7 +138,7 @@ export default function BriefView({ brief }: { brief: Brief }) {
         })}
       </div>
 
-      <footer className="border-t border-neutral-200 pt-4 text-xs text-neutral-400">
+      <footer className="border-t border-neutral-200 pt-4 text-xs text-neutral-600">
         Researched live {new Date(brief.generatedAt).toLocaleString()}. Every claim links to
         its source, and the highlighted text under it is the exact wording from that source
         page.

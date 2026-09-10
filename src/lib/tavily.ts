@@ -1,11 +1,8 @@
-import type { Source } from './schema';
+import { hostOf, type Source } from './schema';
 
 const ENDPOINT = 'https://api.tavily.com/search';
 
-/**
- * Aggregators and review sites. They rank well for department names but carry no
- * sales-relevant facts, and they block extraction so `raw_content` comes back empty.
- */
+/** These block extraction, so `raw_content` comes back empty. */
 const JUNK_DOMAINS = [
   'mapquest.com',
   'zoominfo.com',
@@ -26,10 +23,12 @@ type TavilyResult = {
   score: number;
 };
 
+export type TimeRange = 'day' | 'week' | 'month' | 'year';
+
 export type SearchOptions = {
   includeDomains?: string[];
-  /** 'day' | 'week' | 'month' | 'year' — used to bias news queries toward recency. */
-  timeRange?: string;
+  /** Biases a query toward recency. */
+  timeRange?: TimeRange;
   maxResults?: number;
 };
 
@@ -64,12 +63,12 @@ export async function search(
 
   const data: { results?: TavilyResult[] } = await res.json();
   return (data.results ?? []).flatMap((r) => {
-    // Some results (notably social) return an opaque token where a URL belongs.
-    // An un-linkable citation is worse than no fact, so drop them.
+    // Some results (notably social) return an opaque token where a URL belongs, and an un-linkable citation is worse than no fact.
     if (!r.url?.startsWith('http')) return [];
-    if (JUNK_DOMAINS.some((d) => r.url.includes(d))) return [];
 
-    // Prefer extracted page text; fall back to the snippet when extraction was blocked.
+    const host = hostOf(r.url);
+    if (host && JUNK_DOMAINS.some((d) => host === d || host.endsWith(`.${d}`))) return [];
+
     const text = r.raw_content?.trim() || r.content?.trim() || '';
     if (text.length < 200) return [];
 
@@ -77,20 +76,13 @@ export async function search(
   });
 }
 
-/**
- * Merge result sets from parallel queries, round-robin.
- *
- * Concatenating and truncating lets one broad query fill every slot: a generic
- * "fire grants" search returns six FEMA program pages and crowds out the narrow
- * query that found the actual bid notice. Interleaving guarantees each query
- * contributes its best result before any query contributes its second.
- */
-export function dedupe(groups: Source[][]): Source[] {
+/** Concatenating instead would let one broad query fill every slot and crowd out the narrow queries. */
+export function interleave(groups: Source[][]): Source[] {
   const seen = new Set<string>();
   const out: Source[] = [];
-  const depth = Math.max(0, ...groups.map((g) => g.length));
+  const rounds = Math.max(0, ...groups.map((g) => g.length));
 
-  for (let rank = 0; rank < depth; rank++) {
+  for (let rank = 0; rank < rounds; rank++) {
     for (const group of groups) {
       const s = group[rank];
       if (!s || seen.has(s.url)) continue;

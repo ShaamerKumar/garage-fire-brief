@@ -3,22 +3,20 @@ import { lookupPlace, PlacesError } from '@/lib/places';
 import { research } from '@/lib/research';
 import type { Brief } from '@/lib/schema';
 
-/**
- * Research runs ~15-25s in the wild. The platform default would cut a slow
- * department off mid-flight, so give it room to fail cleanly instead.
- */
+// Research runs ~15-25s; 60s bounds a runaway request well under the 300s platform ceiling.
 export const maxDuration = 60;
-export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
-  let placeId: string;
+  let body: unknown;
   try {
-    ({ placeId } = await req.json());
+    body = await req.json();
   } catch {
     return NextResponse.json({ error: 'Expected a JSON body with a placeId.' }, { status: 400 });
   }
 
-  placeId = placeId?.trim();
+  const raw =
+    typeof body === 'object' && body !== null && 'placeId' in body ? body.placeId : undefined;
+  const placeId = typeof raw === 'string' ? raw.trim() : '';
   if (!placeId) {
     return NextResponse.json({ error: 'Enter a Google Place ID.' }, { status: 400 });
   }

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import BriefView from '@/components/Brief';
-import type { Brief } from '@/lib/schema';
+import type { Brief, BriefResponse } from '@/lib/schema';
 
 const SAMPLES = [
   { id: 'ChIJpcN7ecgAyIkRrOcWzZx3Yyc', label: 'Wise Avenue VFC, MD' },
@@ -16,6 +16,11 @@ const STAGES = [
   'Checking grants and budget activity…',
   'Verifying every quote against its source…',
 ];
+
+function advanceStage(stage: number | null): number | null {
+  if (stage === null) return stage; // the request already finished
+  return Math.min(stage + 1, STAGES.length - 1);
+}
 
 export default function Home() {
   const [placeId, setPlaceId] = useState('');
@@ -31,10 +36,7 @@ export default function Home() {
     setBrief(null);
     setStage(0);
 
-    const ticker = setInterval(
-      () => setStage((s) => (s === null ? s : Math.min(s + 1, STAGES.length - 1))),
-      4000,
-    );
+    const ticker = setInterval(() => setStage(advanceStage), 4000);
 
     try {
       const res = await fetch('/api/brief', {
@@ -42,9 +44,11 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ placeId: id.trim() }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? 'Something went wrong.');
-      setBrief(data as Brief);
+      const data: BriefResponse = await res.json();
+      if (!res.ok || 'error' in data) {
+        throw new Error('error' in data ? data.error : 'Something went wrong.');
+      }
+      setBrief(data);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong.');
     } finally {

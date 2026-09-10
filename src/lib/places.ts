@@ -21,13 +21,7 @@ function component(res: PlacesResponse, type: string, short = false): string {
   return (short ? c?.shortText : c?.longText) ?? '';
 }
 
-/**
- * Resolve a Google Place ID to the seed facts every search is built from.
- *
- * Retries once on 403: Google returns an undifferentiated PERMISSION_DENIED while
- * API-key restriction changes propagate across its edge, which otherwise shows up
- * as an intermittent failure on an otherwise healthy key.
- */
+/** Retries once on 403: a healthy key still gets PERMISSION_DENIED while restriction changes propagate across Google's edge. */
 export async function lookupPlace(placeId: string): Promise<Department> {
   const key = process.env.GOOGLE_MAPS_API_KEY;
   if (!key) throw new PlacesError('GOOGLE_MAPS_API_KEY is not set');
