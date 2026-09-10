@@ -49,6 +49,8 @@ export type Source = {
 
 export type Brief = {
   department: Department;
+  /** One-line reason to call, synthesized from verified facts only. Empty when unavailable. */
+  headline: string;
   sections: Record<Section, Fact[]>;
   /** Sections we searched but found nothing verifiable for — shown as explicit gaps. */
   gaps: Section[];

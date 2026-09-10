@@ -19,7 +19,10 @@ const MODEL = 'anthropic/claude-sonnet-4.5';
  */
 function queriesFor(dept: Department): Record<Section, { q: string; opts: SearchOptions }[]> {
   const where = `${dept.city} ${dept.state}`;
-  const site = dept.website ? new URL(dept.website).hostname.replace(/^www\./, '') : null;
+  const site =
+    dept.website && URL.canParse(dept.website)
+      ? new URL(dept.website).hostname.replace(/^www\./, '')
+      : null;
   // Small departments often have no site of their own; their roster, budget and
   // bid notices live on the town's site instead. Skipping that was leaving the
   // best material undiscovered for exactly the hardest cases.
@@ -178,10 +181,78 @@ export async function researchSection(
   return facts;
 }
 
+/**
+ * Synthesizes the one line the AE actually wants: why call today. It is fed only
+ * claims that already survived quote verification — never raw page text — so it
+ * has no material from which to invent an unsourced claim. Any failure yields ''
+ * rather than throwing: a missing summary must never cost the AE a working brief.
+ */
+export async function summarize(
+  dept: Department,
+  sections: Record<Section, Fact[]>,
+): Promise<string> {
+  const populated = SECTIONS.filter((s) => sections[s].length);
+  if (!populated.length) return '';
+
+  const facts = populated
+    .map((s) => `${s.toUpperCase()}\n${sections[s].map((f) => `- ${f.claim}`).join('\n')}`)
+    .join('\n\n');
+
+  const prompt = `You are briefing an account executive who sells surplus specialty vehicle disposal to fire departments — he helps them sell apparatus they no longer need. He is about to place a cold call to the department below and has time to read exactly one line first.
+
+DEPARTMENT:
+  Name: ${dept.name}
+  Address: ${dept.address}
+  City/State: ${dept.city}, ${dept.state}
+
+VERIFIED FACTS — the only material you may use:
+${facts}
+
+Write one or two sentences telling him why to call this department today.
+
+RULES — these are strict:
+1. Use only the facts above. Do not add, infer, estimate, or embellish anything they do not state.
+2. Name specifics: unit numbers, model years, dollar amounts, dates, names.
+3. Lead with a buying signal if the facts contain one. Strongest first:
+   a. The department is already selling, auctioning, or taking bids on surplus apparatus.
+   b. Apparatus is out of service, retired, or awaiting disposal — a unit they own and cannot use is already surplus in fact, even if not yet listed for sale.
+   c. New apparatus was recently delivered or is on order — whatever it replaces is now surplus.
+   d. Apparatus in the fleet is 20 or more years old.
+   e. Grant or budget money recently arrived.
+4. If the facts contain no real buying signal, say so plainly and point at the best conversational opener instead, in this shape: No buying signal found — lead with <the opener>. Do NOT manufacture urgency the facts do not support. An honest empty hand is the correct answer.
+5. Do not end on speculation about what the department wants, plans, or might do. Never write "suggesting", "likely", "may be looking to", "probably", or "could be". If a closing clause earns its place, make it the question the AE should ask, not a guess about their state. Bad: "...which means they likely have a replaced apparatus now available for disposal." Good: "...ask what happened to the engine it replaced."
+6. Plain prose only. No preamble, no markdown, no bullet points, no quotation marks around your response.`;
+
+  try {
+    const res = await fetch(GATEWAY, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${process.env.AI_GATEWAY_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: 300,
+        temperature: 0,
+      }),
+      cache: 'no-store',
+    });
+
+    if (!res.ok) return '';
+
+    const body = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+    const text = body.choices?.[0]?.message?.content;
+    return typeof text === 'string' ? text.trim() : '';
+  } catch {
+    return '';
+  }
+}
+
 export async function research(
   dept: Department,
   onProgress?: (p: Progress) => void,
-): Promise<{ sections: Record<Section, Fact[]>; gaps: Section[] }> {
+): Promise<{ sections: Record<Section, Fact[]>; gaps: Section[]; headline: string }> {
   const results = await Promise.all(
     SECTIONS.map((s) => researchSection(dept, s, onProgress)),
   );
@@ -190,5 +261,7 @@ export async function research(
     SECTIONS.map((s, i) => [s, results[i]]),
   ) as Record<Section, Fact[]>;
 
-  return { sections, gaps: SECTIONS.filter((s) => sections[s].length === 0) };
+  const headline = await summarize(dept, sections);
+
+  return { sections, gaps: SECTIONS.filter((s) => sections[s].length === 0), headline };
 }

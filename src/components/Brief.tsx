@@ -61,6 +61,33 @@ export default function BriefView({ brief }: { brief: Brief }) {
         </div>
       </header>
 
+      {brief.headline && (
+        <section className="mt-5 rounded-md border-l-2 border-orange-500 bg-orange-50/70 py-4 pl-4 pr-4">
+          <div className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+            <h2 className="text-xs font-semibold uppercase tracking-widest text-orange-700">
+              Why call today
+            </h2>
+            <p className="inline-flex items-center gap-1 text-[11px] leading-tight text-neutral-500">
+              <svg
+                role="img"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                className="h-3.5 w-3.5 shrink-0 text-orange-700/70"
+              >
+                <title>Disclosure</title>
+                <circle cx="8" cy="8" r="6.25" />
+                <path d="M8 7.4v3.6" strokeLinecap="round" />
+                <circle cx="8" cy="5.1" r="0.85" fill="currentColor" stroke="none" />
+              </svg>
+              Generated with AI from the sourced facts below
+            </p>
+          </div>
+          <p className="text-lg font-medium leading-snug text-neutral-900">{brief.headline}</p>
+        </section>
+      )}
+
       <div className="divide-y divide-neutral-100">
         {SECTIONS.map((section) => {
           const facts = brief.sections[section];

@@ -25,9 +25,10 @@ export async function POST(req: Request) {
 
   try {
     const department = await lookupPlace(placeId);
-    const { sections, gaps } = await research(department);
+    const { sections, gaps, headline } = await research(department);
     const brief: Brief = {
       department,
+      headline,
       sections,
       gaps,
       generatedAt: new Date().toISOString(),
