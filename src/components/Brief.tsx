@@ -1,5 +1,26 @@
 import { SECTIONS, SECTION_LABELS, type Brief, type Fact } from '@/lib/schema';
 
+/**
+ * Sources are extracted as markdown, so a table row arrives as
+ * "Utility | 2021 Chevy Silverado 2500" — but on the page those are two cells,
+ * and only each cell is separately findable. Splitting at every structural
+ * boundary keeps each highlighted fragment something the reader can actually
+ * search for on the source page.
+ */
+function quoteFragments(quote: string): string[] {
+  return quote
+    .split(/\n+|\s*\|\s*/)
+    .map((part) =>
+      part
+        .replace(/(^|\s)#{1,6}(?=\s|$)/g, ' ')
+        .replace(/(^|\s)>+(?=\s|$)/g, ' ')
+        .replace(/[*_`]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim(),
+    )
+    .filter((part, i, all) => part.length >= 3 && all.indexOf(part) === i);
+}
+
 function hostOf(url: string) {
   try {
     return new URL(url).hostname.replace(/^www\./, '');
@@ -10,7 +31,7 @@ function hostOf(url: string) {
 
 function FactRow({ fact }: { fact: Fact }) {
   return (
-    <li className="group border-l-2 border-neutral-200 pl-4 transition-colors hover:border-orange-500">
+    <li className="border-l-2 border-neutral-200 pl-4 transition-colors hover:border-orange-500">
       <p className="text-[15px] leading-relaxed text-neutral-900">{fact.claim}</p>
       <a
         href={fact.sourceUrl}
@@ -21,11 +42,19 @@ function FactRow({ fact }: { fact: Fact }) {
         <span className="font-medium">{hostOf(fact.sourceUrl)}</span>
         <span className="truncate text-neutral-400">{fact.sourceTitle}</span>
       </a>
-      {/* The verbatim quote is the proof behind the claim — an AE asked
-          "where'd you hear that?" can read it out without leaving the page. */}
-      <blockquote className="mt-1.5 hidden border-l border-neutral-200 pl-3 text-xs italic leading-relaxed text-neutral-500 group-hover:block">
-        &ldquo;{fact.quote.replace(/\s+/g, ' ').trim()}&rdquo;
-      </blockquote>
+      <p className="mt-1 text-xs leading-relaxed text-neutral-500">
+        <span aria-hidden="true" className="mr-1 text-orange-600">
+          *
+        </span>
+        {quoteFragments(fact.quote).map((fragment, i) => (
+          <span key={i}>
+            {i > 0 && <span className="mx-1 text-neutral-300">·</span>}
+            <mark className="bg-amber-100/80 px-1 py-0.5 italic text-neutral-700">
+              {fragment}
+            </mark>
+          </span>
+        ))}
+      </p>
     </li>
   );
 }
