@@ -29,27 +29,30 @@ function hostOf(url: string) {
   }
 }
 
+const LINK_FOCUS =
+  'rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-600';
+
 function FactRow({ fact }: { fact: Fact }) {
   return (
-    <li className="border-l-2 border-neutral-200 pl-4 transition-colors hover:border-orange-500">
-      <p className="text-[15px] leading-relaxed text-neutral-900">{fact.claim}</p>
+    <li className="-mx-2 rounded-md px-2 py-2 transition-colors hover:bg-neutral-100">
+      <p className="text-[15px] font-medium leading-relaxed text-neutral-900">{fact.claim}</p>
       <a
         href={fact.sourceUrl}
         target="_blank"
         rel="noopener noreferrer"
-        className="mt-1 inline-flex items-baseline gap-1.5 text-xs text-neutral-500 underline-offset-2 hover:text-orange-700 hover:underline"
+        title={fact.sourceTitle}
+        className={`mt-1.5 inline-block max-w-full break-words text-xs font-medium text-neutral-500 underline-offset-2 hover:text-orange-700 hover:underline ${LINK_FOCUS}`}
       >
-        <span className="font-medium">{hostOf(fact.sourceUrl)}</span>
-        <span className="truncate text-neutral-400">{fact.sourceTitle}</span>
+        {hostOf(fact.sourceUrl)}
       </a>
       <p className="mt-1 text-xs leading-relaxed text-neutral-500">
-        <span aria-hidden="true" className="mr-1 text-orange-600">
+        <span aria-hidden="true" className="mr-1 text-neutral-300">
           *
         </span>
         {quoteFragments(fact.quote).map((fragment, i) => (
           <span key={i}>
             {i > 0 && <span className="mx-1 text-neutral-300">·</span>}
-            <mark className="bg-amber-100/80 px-1 py-0.5 italic text-neutral-700">
+            <mark className="rounded-sm bg-amber-100/60 px-1 italic text-neutral-500">
               {fragment}
             </mark>
           </span>
@@ -64,13 +67,18 @@ export default function BriefView({ brief }: { brief: Brief }) {
   const total = SECTIONS.reduce((n, s) => n + brief.sections[s].length, 0);
 
   return (
-    <article className="mx-auto max-w-3xl">
+    <article className="mx-auto max-w-3xl rounded-xl border border-neutral-200 bg-white p-6 shadow-sm sm:p-8">
       <header className="border-b border-neutral-200 pb-5">
-        <h1 className="text-2xl font-semibold tracking-tight text-neutral-900">{d.name}</h1>
+        <h1 className="text-2xl font-semibold tracking-tight break-words text-neutral-900">
+          {d.name}
+        </h1>
         <p className="mt-1 text-sm text-neutral-600">{d.address}</p>
         <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
           {d.phone && (
-            <a href={`tel:${d.phone}`} className="font-medium text-orange-700 hover:underline">
+            <a
+              href={`tel:${d.phone}`}
+              className={`font-medium text-orange-700 hover:underline ${LINK_FOCUS}`}
+            >
               {d.phone}
             </a>
           )}
@@ -79,7 +87,7 @@ export default function BriefView({ brief }: { brief: Brief }) {
               href={d.website}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-neutral-600 hover:text-orange-700 hover:underline"
+              className={`max-w-full break-words text-neutral-600 hover:text-orange-700 hover:underline ${LINK_FOCUS}`}
             >
               {hostOf(d.website)}
             </a>
@@ -91,8 +99,8 @@ export default function BriefView({ brief }: { brief: Brief }) {
       </header>
 
       {brief.headline && (
-        <section className="mt-5 rounded-md border-l-2 border-orange-500 bg-orange-50/70 py-4 pl-4 pr-4">
-          <div className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+        <section className="mt-6 rounded-lg border border-orange-200 bg-orange-50 p-5 sm:p-6">
+          <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-0.5">
             <h2 className="text-xs font-semibold uppercase tracking-widest text-orange-700">
               Why call today
             </h2>
@@ -113,20 +121,27 @@ export default function BriefView({ brief }: { brief: Brief }) {
               Generated with AI from the sourced facts below
             </p>
           </div>
-          <p className="text-lg font-medium leading-snug text-neutral-900">{brief.headline}</p>
+          <p className="text-xl font-semibold leading-snug tracking-tight text-neutral-900 sm:text-2xl">
+            {brief.headline}
+          </p>
         </section>
       )}
 
-      <div className="divide-y divide-neutral-100">
+      <div className="mt-2 divide-y divide-neutral-100">
         {SECTIONS.map((section) => {
           const facts = brief.sections[section];
           return (
             <section key={section} className="py-5">
-              <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-neutral-400">
+              <h2 className="mb-3 flex items-baseline gap-2 text-xs font-semibold uppercase tracking-widest text-neutral-400">
                 {SECTION_LABELS[section]}
+                {facts.length > 0 && (
+                  <span className="font-normal tracking-normal text-neutral-300">
+                    {facts.length}
+                  </span>
+                )}
               </h2>
               {facts.length ? (
-                <ul className="space-y-4">
+                <ul className="space-y-1">
                   {facts.map((f, i) => (
                     <FactRow key={i} fact={f} />
                   ))}
@@ -143,7 +158,8 @@ export default function BriefView({ brief }: { brief: Brief }) {
 
       <footer className="border-t border-neutral-200 pt-4 text-xs text-neutral-400">
         Researched live {new Date(brief.generatedAt).toLocaleString()}. Every claim links to
-        its source; hover a fact to see the exact supporting quote.
+        its source, and the highlighted text under it is the exact wording from that source
+        page.
       </footer>
     </article>
   );
